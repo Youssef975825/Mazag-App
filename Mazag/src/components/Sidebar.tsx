@@ -11,7 +11,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ children, userName = 'مستخدم', onLogout, isDarkMode = true }: SidebarProps) {
-    const [expanded, setExpended] = useState(true);
+    const [expanded, setExpanded] = useState(true);
 
     return (
         <aside className='h-screen w-fit select-none z-20'>
@@ -27,7 +27,7 @@ export default function Sidebar({ children, userName = 'مستخدم', onLogout,
                     </div>
 
                     <button 
-                        onClick={() => setExpended(curr => !curr)} 
+                        onClick={() => setExpanded(curr => !curr)} 
                         className='p-2 rounded-xl bg-white/5 hover:bg-white/10 text-teal-400 transition-all border border-white/5 cursor-pointer'
                     >
                         {expanded ? (

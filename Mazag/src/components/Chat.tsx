@@ -1,73 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { db, auth } from '../firebase';
 import Sidebar from './Sidebar';       // استدعاء ملف الـ Sidebar
 import SidebarItem from '../components/SidebarItems'; // استدعاء ملف الـ SidebarItem
+import Login from './Login';           // شاشة الدخول الحقيقية (Firebase Auth)
 
-const getChatRoomId = (user1: string, user2: string) => {
-  return [user1, user2].sort().join('_');
+const getChatRoomId = (uid1: string, uid2: string) => {
+  return [uid1, uid2].sort().join('_');
 };
 
 export default function Chat() {
-  const [currentUsername, setCurrentUsername] = useState<string>(() => {
-    return localStorage.getItem('mazag_user') || '';
-  });
-  
-  const [tempUsername, setTempUsername] = useState('');
+  // ⚠️ كل الـ hooks لازم تتنادى هنا فوق، من غير أي return شرطي قبلها،
+  // عشان React يفضل يستدعي نفس عدد الـ hooks بنفس الترتيب في كل render.
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [friendsList, setFriendsList] = useState<any[]>([]);
   const [activeFriend, setActiveFriend] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [inputText, setInputText] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // دالة تسجيل الدخول لو الاسم مش موجود
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!tempUsername.trim()) return;
-    const username = tempUsername.trim();
-    localStorage.setItem('mazag_user', username);
-    setCurrentUsername(username);
-    try {
-      await setDoc(doc(db, "users", username), {
-        name: username,
-        lastSeen: new Date(),
-        status: "online"
-      }, { merge: true });
-    } catch (error) {
-      console.error("Error saving user:", error);
-    }
-  };
-
-  if (!currentUsername) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#0a0a0c] text-gray-100">
-        <form onSubmit={handleLogin} className="p-8 rounded-3xl bg-black/40 border border-white/10 w-96 space-y-4 shadow-2xl">
-          <h2 className="text-2xl font-bold text-center text-teal-400">مرحباً بك في Mazag 🌿</h2>
-          <input 
-            type="text"
-            value={tempUsername}
-            onChange={(e) => setTempUsername(e.target.value)}
-            placeholder="اكتب اسمك هنا..."
-            className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white focus:border-teal-400 outline-none text-sm"
-          />
-          <button type="submit" className="w-full py-3 rounded-2xl bg-gradient-to-r from-teal-500 to-indigo-600 font-bold text-sm text-white">
-            دخول للعالم الخاص 🚀
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  // جلب الأصدقاء
+  // متابعة حالة تسجيل الدخول الحقيقية من Firebase Auth
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthChecked(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // جلب الأصدقاء (كل اليوزرز ما عدا أنا)
+  useEffect(() => {
+    if (!currentUser) return;
     const q = collection(db, "users");
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const users: any[] = [];
       snapshot.forEach((document) => {
-        const userData = document.data();
-        if (userData.name !== currentUsername) {
+        if (document.id !== currentUser.uid) {
+          const userData = document.data();
           users.push({
-            id: document.id,
+            uid: document.id,
             name: userData.name,
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.name}`,
             status: userData.status || 'online'
@@ -75,22 +48,15 @@ export default function Chat() {
         }
       });
       setFriendsList(users);
-      if (users.length > 0 && !activeFriend) {
-        setActiveFriend(users[0]);
-      }
+      setActiveFriend((curr: any) => curr ?? (users.length > 0 ? users[0] : null));
     });
     return () => unsubscribe();
-  }, [currentUsername]);
-
-  const handleSelectFriend = (friend: any) => {
-    setActiveFriend(friend);
-    localStorage.setItem('mazag_active_friend', JSON.stringify(friend));
-  };
+  }, [currentUser]);
 
   // جلب الرسائل
   useEffect(() => {
-    if (!activeFriend) return;
-    const roomId = getChatRoomId(currentUsername, activeFriend.name);
+    if (!currentUser || !activeFriend) return;
+    const roomId = getChatRoomId(currentUser.uid, activeFriend.uid);
     const q = query(collection(db, "chats", roomId, "messages"), orderBy("createdAt", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedMessages: any[] = [];
@@ -100,17 +66,38 @@ export default function Chat() {
       setMessages(loadedMessages);
     });
     return () => unsubscribe();
-  }, [activeFriend, currentUsername]);
+  }, [activeFriend, currentUser]);
+
+  // لسه بيتشيك على حالة الدخول (أول تحميل للصفحة) - مانعرضش حاجة عشان منلخبطش الشاشة
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#0a0a0c] text-teal-400">
+        جاري التحميل...
+      </div>
+    );
+  }
+
+  // مفيش يوزر مسجل دخول -> اعرض شاشة الدخول الحقيقية
+  if (!currentUser) {
+    return <Login />;
+  }
+
+  const currentUsername = currentUser.displayName || currentUser.email?.split('@')[0] || 'مستخدم';
+
+  const handleSelectFriend = (friend: any) => {
+    setActiveFriend(friend);
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !activeFriend) return;
     const textToSend = inputText;
     setInputText('');
-    const roomId = getChatRoomId(currentUsername, activeFriend.name);
+    const roomId = getChatRoomId(currentUser.uid, activeFriend.uid);
     try {
       await addDoc(collection(db, "chats", roomId, "messages"), {
-        sender: currentUsername,
+        sender: currentUser.uid,
+        senderName: currentUsername,
         text: textToSend,
         createdAt: serverTimestamp(),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -121,6 +108,16 @@ export default function Chat() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      // نسجل إن اليوزر بقى offline قبل ما نعمل logout
+      await setDoc(doc(db, "users", currentUser.uid), { status: 'offline' }, { merge: true });
+    } catch (error) {
+      console.error("Error updating status on logout:", error);
+    }
+    await signOut(auth);
+  };
+
   return (
     <div className={`flex h-screen w-full overflow-hidden transition-colors duration-300 ${isDarkMode ? 'bg-[#0a0a0c] text-gray-100' : 'bg-[#f4f4f6] text-gray-900'}`}>
       
@@ -128,11 +125,7 @@ export default function Chat() {
       <Sidebar 
         userName={currentUsername}
         isDarkMode={isDarkMode}
-        onLogout={() => {
-          localStorage.removeItem('mazag_user');
-          localStorage.removeItem('mazag_active_friend');
-          window.location.reload();
-        }}
+        onLogout={handleLogout}
       >
         <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>التبويبات</div>
         
@@ -154,10 +147,10 @@ export default function Chat() {
         {/* عرض الأصدقاء */}
         {friendsList.map((friend) => (
           <div
-            key={friend.id}
+            key={friend.uid}
             onClick={() => handleSelectFriend(friend)}
             className={`flex items-center space-x-3 space-x-reverse p-2.5 my-1 rounded-xl cursor-pointer transition-all ${
-              activeFriend?.name === friend.name 
+              activeFriend?.uid === friend.uid 
                 ? 'bg-teal-500/20 border border-teal-500/30 text-teal-500 font-bold' 
                 : isDarkMode ? 'hover:bg-white/5 text-gray-300' : 'hover:bg-gray-100 text-gray-700'
             }`}
@@ -187,7 +180,7 @@ export default function Chat() {
 
         <div className="flex-1 p-6 overflow-y-auto space-y-4">
           {messages.map((msg) => {
-            const isMe = msg.sender === currentUsername;
+            const isMe = msg.sender === currentUser.uid;
             return (
               <div key={msg.id} className={`flex items-end space-x-2 space-x-reverse ${isMe ? 'justify-start' : 'justify-end'}`}>
                 {isMe && <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUsername}`} alt="me" className="w-8 h-8 rounded-full mb-1 border border-teal-500/30" />}

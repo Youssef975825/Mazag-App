@@ -1,47 +1,73 @@
 import React, { useState } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+} from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 
 interface MazagLoginProps {
+  // Optional: Chat.tsx listens to Firebase's onAuthStateChanged directly,
+  // so this callback is not required, but kept for flexibility.
   onLoginSuccess?: (name: string) => void;
 }
 
 const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
-  
+
   // States للبيانات المدخلة
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // لو في حالة تسجيل الدخول ومكتبش اسم، ممكن نعتمد على الإيميل كاسم مؤقت أو نطلب اسمه
-    const userName = name.trim() || email.split('@')[0] || 'مستخدم مجهول';
-
-    // حفظ الاسم في الـ localStorage عشان شاشة الشات تقرأه
-    localStorage.setItem('mazag_user', userName);
+    setError('');
+    setIsSubmitting(true);
 
     try {
-      // 2. حفظ المستخدم في Firestore عشان قائمة الأصدقاء تقراه لايف
-      await setDoc(doc(db, 'users', userName), {
-        name: userName,
-        email: email,
-        lastSeen: new Date(),
-        status: 'online'
-      });
-    } catch (error) {
-      console.error("Error saving user to Firestore: ", error);
-    }
+      if (activeTab === 'signup') {
+        // إنشاء حساب حقيقي في Firebase Auth
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        const displayName = name.trim() || email.split('@')[0];
+        await updateProfile(cred.user, { displayName });
 
-    // لو فيه فانكشن تمرير للخطوة التالية ننفذها
-    if (onLoginSuccess) {
-      onLoginSuccess(userName);
-    } else {
-      // مؤقتاً لحد ما نربط الـ Router، ممكن نعمل إعادة تحميل للصفحة أو نبه المستخدم
-      window.location.reload(); 
+        // حفظ بيانات المستخدم في Firestore، الـ doc id = uid عشان يفضل فريد وآمن
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          name: displayName,
+          email,
+          lastSeen: new Date(),
+          status: 'online',
+        });
+
+        onLoginSuccess?.(displayName);
+      } else {
+        // تسجيل دخول حقيقي بالباسورد، مش بس كتابة اسم
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+
+        await setDoc(
+          doc(db, 'users', cred.user.uid),
+          { lastSeen: new Date(), status: 'online' },
+          { merge: true } // عشان ميمسحش بيانات المستخدم القديمة
+        );
+
+        onLoginSuccess?.(cred.user.displayName || email.split('@')[0]);
+      }
+    } catch (err: any) {
+      // رسائل خطأ مفهومة بدل ما الفورم يفضل ساكت لو حصل error
+      const code = err?.code || '';
+      if (code === 'auth/email-already-in-use') setError('الإيميل ده مستخدم قبل كده');
+      else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') setError('الإيميل أو كلمة المرور غلط');
+      else if (code === 'auth/weak-password') setError('كلمة المرور لازم تكون 6 حروف على الأقل');
+      else if (code === 'auth/user-not-found') setError('مفيش حساب بالإيميل ده');
+      else setError('حصل خطأ، حاول تاني');
+      console.error('Auth error:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -81,13 +107,15 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
 
         <div className={`flex p-1 rounded-2xl mb-8 border ${isDarkMode ? 'bg-black/40 border-white/5' : 'bg-gray-200/60 border-gray-300/50'}`}>
           <button 
-            onClick={() => setActiveTab('login')}
+            type="button"
+            onClick={() => { setActiveTab('login'); setError(''); }}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${activeTab === 'login' ? (isDarkMode ? 'bg-teal-500 text-black shadow-lg shadow-teal-500/20' : 'bg-white text-teal-600 shadow-md') : 'text-gray-400 hover:text-gray-200'}`}
           >
             تسجيل الدخول
           </button>
           <button 
-            onClick={() => setActiveTab('signup')}
+            type="button"
+            onClick={() => { setActiveTab('signup'); setError(''); }}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${activeTab === 'signup' ? (isDarkMode ? 'bg-teal-500 text-black shadow-lg shadow-teal-500/20' : 'bg-white text-teal-600 shadow-md') : 'text-gray-400 hover:text-gray-200'}`}
           >
             حساب جديد
@@ -95,19 +123,27 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* نطلب الاسم سواء في الساين أب أو اللوجن عشان نعرف مين اللي باعت */}
-          <div>
-            <label className="block text-xs font-medium mb-1.5 opacity-80">الاسم بالكامل</label>
-            <input 
-              type="text" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="يوسف صبحي"
-              required
-              className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-teal-400 focus:bg-white/10 text-white' : 'bg-white/80 border-gray-200 focus:border-teal-500 focus:bg-white text-gray-900'}`}
-            />
-          </div>
+
+          {error && (
+            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
+              {error}
+            </div>
+          )}
+
+          {/* الاسم مطلوب بس وقت إنشاء حساب جديد */}
+          {activeTab === 'signup' && (
+            <div>
+              <label className="block text-xs font-medium mb-1.5 opacity-80">الاسم بالكامل</label>
+              <input 
+                type="text" 
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="يوسف صبحي"
+                required
+                className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-teal-400 focus:bg-white/10 text-white' : 'bg-white/80 border-gray-200 focus:border-teal-500 focus:bg-white text-gray-900'}`}
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium mb-1.5 opacity-80">البريد الإلكتروني</label>
@@ -129,66 +165,43 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              minLength={6}
               className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-teal-400 focus:bg-white/10 text-white' : 'bg-white/80 border-gray-200 focus:border-teal-500 focus:bg-white text-gray-900'}`}
             />
           </div>
 
-                    {/* خيارات حالة المزاج (Radio Buttons) */}
+          {/* خيارات حالة المزاج (Radio Buttons) - شكلية فقط حاليًا */}
           <div className="space-y-2 mt-4">
             <label className="block text-xs font-medium opacity-80">اختر حالة المزاج:</label>
             <div className="flex items-center space-x-6 text-xs text-gray-300">
-              
               <label className="flex items-center space-x-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  name="moodType" 
-                  value="chill" 
-                  className="accent-teal-500 cursor-pointer"
-                  defaultChecked 
-                />
+                <input type="radio" name="moodType" value="chill" className="accent-teal-500 cursor-pointer" defaultChecked />
                 <span>روقان 🌿</span>
               </label>
-
               <label className="flex items-center space-x-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  name="moodType" 
-                  value="deep" 
-                  className="accent-teal-500 cursor-pointer"
-                />
+                <input type="radio" name="moodType" value="deep" className="accent-teal-500 cursor-pointer" />
                 <span>ديب مود 🌌</span>
               </label>
-
               <label className="flex items-center space-x-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  name="moodType" 
-                  value="energy" 
-                  className="accent-teal-500 cursor-pointer"
-                />
+                <input type="radio" name="moodType" value="energy" className="accent-teal-500 cursor-pointer" />
                 <span>عالي ⚡</span>
               </label>
-
             </div>
           </div>
 
-          {/* زر تذكرني (Checkbox) */}
           <div className="pt-1">
             <label className="flex items-center space-x-2 text-xs cursor-pointer opacity-80 hover:opacity-100 transition-opacity">
-              <input
-                type="checkbox"
-                defaultChecked 
-                className="w-4 h-4 rounded accent-orange-400 cursor-pointer"
-              />
+              <input type="checkbox" defaultChecked className="w-4 h-4 rounded accent-orange-400 cursor-pointer" />
               <span>تذكرني لاحقاً</span>
             </label>
           </div>
 
           <button 
             type="submit"
-            className={`w-full mt-2 py-3.5 rounded-xl font-bold tracking-wide transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 shadow-xl cursor-pointer ${isDarkMode ? 'bg-gradient-to-r from-pink-500 to-orange-400 text-white hover:shadow-pink-500/30' : 'bg-gradient-to-r from-emerald-400 to-cyan-500 text-black hover:shadow-cyan-500/30'}`}
+            disabled={isSubmitting}
+            className={`w-full mt-2 py-3.5 rounded-xl font-bold tracking-wide transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 shadow-xl cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${isDarkMode ? 'bg-gradient-to-r from-pink-500 to-orange-400 text-white hover:shadow-pink-500/30' : 'bg-gradient-to-r from-emerald-400 to-cyan-500 text-black hover:shadow-cyan-500/30'}`}
           >
-            {activeTab === 'login' ? 'ابدأ المزاج 🚀' : 'انضم إلينا الآن ✨'}
+            {isSubmitting ? 'جاري التحميل...' : activeTab === 'login' ? 'ابدأ المزاج 🚀' : 'انضم إلينا الآن ✨'}
           </button>
         </form>
 
