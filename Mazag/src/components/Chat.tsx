@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import Sidebar from './Sidebar';       // استدعاء ملف الـ Sidebar
 import SidebarItem from '../components/SidebarItems'; // استدعاء ملف الـ SidebarItem
