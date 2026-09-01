@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "firebase": "^12.18.0",
+    "lucide-react": "^1.38.0",
+    "tailwindcss": "^4.3.3"
+  }
+}
