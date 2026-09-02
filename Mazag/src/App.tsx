@@ -1,30 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import Chat from './components/Chat';
-import Login from './components/Login';
+import React from "react";
+import Chat from "./components/Chat";
 
+// كل منطق تسجيل الدخول (هل فيه يوزر ولا لأ) بقى جوّه Chat.tsx
+// عن طريق Firebase Auth (onAuthStateChanged)، فـ App.tsx مبقاش
+// محتاج يتأكد من حاجة بنفسه - وده بيمنع تعارض بين مصدرين مختلفين
+// لمعرفة حالة تسجيل الدخول (localStorage القديم vs Firebase الحقيقي).
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-
-  // أول ما التطبيق يفتح، نتأكد لو فيه اسم متخزن قبل كده
-  useEffect(() => {
-    const savedUser = localStorage.getItem('mazag_user');
-    if (savedUser) {
-      setCurrentUser(savedUser);
-    }
-  }, []);
-
-  // دالة بتشتغل أول ما يعمل تسجيل دخول ناجح
-  const handleLoginSuccess = (name: string) => {
-    setCurrentUser(name);
-  };
-
   return (
     <div className="w-full h-screen">
-      {!currentUser ? (
-        <Login onLoginSuccess={handleLoginSuccess} />
-      ) : (
-        <Chat />
-      )}
+      <Chat />
     </div>
   );
 }
