@@ -6,6 +6,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { getAvatarUrl, type Gender } from '../components/Avatar';
 
 interface MazagLoginProps {
   // Optional: Chat.tsx listens to Firebase's onAuthStateChanged directly,
@@ -21,6 +22,7 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [gender, setGender] = useState<Gender>('male');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,12 +36,16 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
         // إنشاء حساب حقيقي في Firebase Auth
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         const displayName = name.trim() || email.split('@')[0];
-        await updateProfile(cred.user, { displayName });
+        const avatarUrl = getAvatarUrl(displayName, gender);
+
+        await updateProfile(cred.user, { displayName, photoURL: avatarUrl });
 
         // حفظ بيانات المستخدم في Firestore، الـ doc id = uid عشان يفضل فريد وآمن
         await setDoc(doc(db, 'users', cred.user.uid), {
           name: displayName,
           email,
+          gender,
+          avatar: avatarUrl,
           lastSeen: new Date(),
           status: 'online',
         });
@@ -72,19 +78,19 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className={`min-h-screen w-full flex items-center justify-center relative overflow-hidden transition-colors duration-700 ${isDarkMode ? 'bg-[#0a0a0c] text-gray-100' : 'bg-[#f4f4f6] text-gray-900'}`}>
+    <div className={`min-h-screen w-full flex items-center justify-center relative overflow-hidden transition-colors duration-700 px-4 py-8 ${isDarkMode ? 'bg-[#0a0a0c] text-gray-100' : 'bg-[#f4f4f6] text-gray-900'}`}>
       
       {/* خلفية متحركة */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className={`absolute -top-40 -left-40 w-96 h-96 rounded-full mix-blend-multiply filter blur-[120px] opacity-40 animate-pulse ${isDarkMode ? 'bg-teal-600' : 'bg-teal-400'}`}></div>
-        <div className={`absolute top-1/2 -right-20 w-96 h-96 rounded-full mix-blend-multiply filter blur-[140px] opacity-30 ${isDarkMode ? 'bg-purple-600' : 'bg-pink-300'}`}></div>
-        <div className={`absolute -bottom-32 left-1/3 w-96 h-96 rounded-full mix-blend-multiply filter blur-[130px] opacity-30 ${isDarkMode ? 'bg-indigo-700' : 'bg-blue-300'}`}></div>
+        <div className={`absolute -top-40 -left-40 w-72 h-72 sm:w-96 sm:h-96 rounded-full mix-blend-multiply filter blur-[120px] opacity-40 animate-pulse ${isDarkMode ? 'bg-teal-600' : 'bg-teal-400'}`}></div>
+        <div className={`absolute top-1/2 -right-20 w-72 h-72 sm:w-96 sm:h-96 rounded-full mix-blend-multiply filter blur-[140px] opacity-30 ${isDarkMode ? 'bg-purple-600' : 'bg-pink-300'}`}></div>
+        <div className={`absolute -bottom-32 left-1/3 w-72 h-72 sm:w-96 sm:h-96 rounded-full mix-blend-multiply filter blur-[130px] opacity-30 ${isDarkMode ? 'bg-indigo-700' : 'bg-blue-300'}`}></div>
       </div>
 
       {/* زرار تبديل الثيم */}
       <button 
         onClick={() => setIsDarkMode(!isDarkMode)}
-        className={`absolute top-6 right-6 z-20 p-3 rounded-full backdrop-blur-md border transition-all duration-300 transform hover:scale-110 shadow-lg ${isDarkMode ? 'bg-white/10 border-white/20 text-yellow-400 hover:bg-white/20' : 'bg-black/5 border-black/10 text-purple-600 hover:bg-black/10'}`}
+        className={`absolute top-4 right-4 sm:top-6 sm:right-6 z-20 p-2.5 sm:p-3 rounded-full backdrop-blur-md border transition-all duration-300 transform hover:scale-110 shadow-lg ${isDarkMode ? 'bg-white/10 border-white/20 text-yellow-400 hover:bg-white/20' : 'bg-black/5 border-black/10 text-purple-600 hover:bg-black/10'}`}
         title="تغيير النمط"
       >
         {isDarkMode ? (
@@ -95,17 +101,17 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
       </button>
 
       {/* الكارت الرئيسي */}
-      <div className={`relative z-10 w-full max-w-md p-8 sm:p-10 rounded-3xl backdrop-blur-2xl border shadow-2xl transition-all duration-500 ${isDarkMode ? 'bg-white/[0.03] border-white/10 shadow-teal-950/30' : 'bg-white/70 border-white/60 shadow-xl'}`}>
+      <div className={`relative z-10 w-full max-w-md p-6 sm:p-8 md:p-10 rounded-3xl backdrop-blur-2xl border shadow-2xl transition-all duration-500 ${isDarkMode ? 'bg-white/[0.03] border-white/10 shadow-teal-950/30' : 'bg-white/70 border-white/60 shadow-xl'}`}>
         
-        <div className="flex flex-col items-center mb-8">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow-lg transform hover:rotate-6 transition-transform duration-300 ${isDarkMode ? 'bg-gradient-to-tr from-teal-500 to-indigo-600 text-white shadow-teal-500/30' : 'bg-gradient-to-tr from-teal-400 to-indigo-500 text-white shadow-indigo-500/20'}`}>
-            <span className="text-2xl font-black tracking-tighter">M~</span>
+        <div className="flex flex-col items-center mb-6 sm:mb-8">
+          <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center mb-3 shadow-lg transform hover:rotate-6 transition-transform duration-300 ${isDarkMode ? 'bg-gradient-to-tr from-teal-500 to-indigo-600 text-white shadow-teal-500/30' : 'bg-gradient-to-tr from-teal-400 to-indigo-500 text-white shadow-indigo-500/20'}`}>
+            <span className="text-xl sm:text-2xl font-black tracking-tighter">M~</span>
           </div>
-          <h1 className="text-3xl font-bold tracking-wider">Mazag</h1>
-          <p className={`text-xs mt-1 tracking-widest uppercase ${isDarkMode ? 'text-teal-400' : 'text-teal-600'}`}>عالمك الخاص..بعيد عن زحمة السوشيال</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-wider">Mazag</h1>
+          <p className={`text-[11px] sm:text-xs mt-1 tracking-widest uppercase text-center ${isDarkMode ? 'text-teal-400' : 'text-teal-600'}`}>عالمك الخاص..بعيد عن زحمة السوشيال</p>
         </div>
 
-        <div className={`flex p-1 rounded-2xl mb-8 border ${isDarkMode ? 'bg-black/40 border-white/5' : 'bg-gray-200/60 border-gray-300/50'}`}>
+        <div className={`flex p-1 rounded-2xl mb-6 sm:mb-8 border ${isDarkMode ? 'bg-black/40 border-white/5' : 'bg-gray-200/60 border-gray-300/50'}`}>
           <button 
             type="button"
             onClick={() => { setActiveTab('login'); setError(''); }}
@@ -122,7 +128,7 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
 
           {error && (
             <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
@@ -130,19 +136,50 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
             </div>
           )}
 
-          {/* الاسم مطلوب بس وقت إنشاء حساب جديد */}
+          {/* الاسم والنوع مطلوبين بس وقت إنشاء حساب جديد */}
           {activeTab === 'signup' && (
-            <div>
-              <label className="block text-xs font-medium mb-1.5 opacity-80">الاسم بالكامل</label>
-              <input 
-                type="text" 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="يوسف صبحي"
-                required
-                className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-teal-400 focus:bg-white/10 text-white' : 'bg-white/80 border-gray-200 focus:border-teal-500 focus:bg-white text-gray-900'}`}
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs font-medium mb-1.5 opacity-80">الاسم بالكامل</label>
+                <input 
+                  type="text" 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your Full Name"
+                  required
+                  className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-teal-400 focus:bg-white/10 text-white' : 'bg-white/80 border-gray-200 focus:border-teal-500 focus:bg-white text-gray-900'}`}
+                />
+              </div>
+
+              {/* النوع - عشان الأفاتار يطلع مناسب (شعر/لحية) بدل ما يبقى عشوائي */}
+              <div>
+                <label className="block text-xs font-medium mb-1.5 opacity-80">النوع (عشان الأفاتار يبقى مناسب)</label>
+                <div className="flex items-center gap-6 text-xs text-gray-300">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="gender"
+                      value="male"
+                      checked={gender === 'male'}
+                      onChange={() => setGender('male')}
+                      className="accent-teal-500 cursor-pointer"
+                    />
+                    <span>ذكر 👨</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="gender"
+                      value="female"
+                      checked={gender === 'female'}
+                      onChange={() => setGender('female')}
+                      className="accent-teal-500 cursor-pointer"
+                    />
+                    <span>أنثى 👩</span>
+                  </label>
+                </div>
+              </div>
+            </>
           )}
 
           <div>
@@ -173,16 +210,16 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
           {/* خيارات حالة المزاج (Radio Buttons) - شكلية فقط حاليًا */}
           <div className="space-y-2 mt-4">
             <label className="block text-xs font-medium opacity-80">اختر حالة المزاج:</label>
-            <div className="flex items-center space-x-6 text-xs text-gray-300">
-              <label className="flex items-center space-x-2 cursor-pointer">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-gray-300">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="moodType" value="chill" className="accent-teal-500 cursor-pointer" defaultChecked />
                 <span>روقان 🌿</span>
               </label>
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="moodType" value="deep" className="accent-teal-500 cursor-pointer" />
                 <span>ديب مود 🌌</span>
               </label>
-              <label className="flex items-center space-x-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="moodType" value="energy" className="accent-teal-500 cursor-pointer" />
                 <span>عالي ⚡</span>
               </label>
@@ -190,7 +227,7 @@ const MazagLogin: React.FC<MazagLoginProps> = ({ onLoginSuccess }) => {
           </div>
 
           <div className="pt-1">
-            <label className="flex items-center space-x-2 text-xs cursor-pointer opacity-80 hover:opacity-100 transition-opacity">
+            <label className="flex items-center gap-2 text-xs cursor-pointer opacity-80 hover:opacity-100 transition-opacity">
               <input type="checkbox" defaultChecked className="w-4 h-4 rounded accent-orange-400 cursor-pointer" />
               <span>تذكرني لاحقاً</span>
             </label>
