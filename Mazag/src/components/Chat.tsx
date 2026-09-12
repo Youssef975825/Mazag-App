@@ -313,7 +313,11 @@ export default function Chat() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeFriend) return;
+    if (!inputText.trim()) return;
+    if (!activeFriend) {
+      alert('اختار صديق الأول من القايمة عشان تقدر تبعتله رسالة 🌿');
+      return;
+    }
     const textToSend = inputText;
     setInputText('');
 
@@ -321,6 +325,9 @@ export default function Chat() {
     setTypingStatus(false);
 
     const roomId = getChatRoomId(currentUser.uid, activeFriend.uid);
+    console.log('🔍 DEBUG - my uid:', currentUser.uid);
+    console.log('🔍 DEBUG - friend uid:', activeFriend.uid);
+    console.log('🔍 DEBUG - computed roomId:', roomId);
     try {
       await addDoc(collection(db, "chats", roomId, "messages"), {
         sender: currentUser.uid,
@@ -695,8 +702,9 @@ export default function Chat() {
               type="text"
               value={inputText}
               onChange={handleInputChange}
-              placeholder="اكتب رسالتك في روقان... 🌿"
-              className={`flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl border text-sm outline-none transition-all ${
+              disabled={!activeFriend}
+              placeholder={activeFriend ? "اكتب رسالتك في روقان... 🌿" : "اختار صديق الأول من القايمة..."}
+              className={`flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl border text-sm outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 isDarkMode 
                   ? 'bg-white/5 border-white/10 text-white focus:border-teal-400' 
                   : 'bg-white border-gray-300 text-gray-900 focus:border-teal-500 shadow-sm'
