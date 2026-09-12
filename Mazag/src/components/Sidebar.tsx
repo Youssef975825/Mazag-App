@@ -1,7 +1,9 @@
-import React, { useState, createContext } from 'react';
+import React, { useState, useEffect, createContext } from 'react';
 import { getAvatarUrl } from '../components/Avatar';
+import { collection, query, where, getDocs, updateDoc, doc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { db } from "../firebase";
+import { getAuth } from "firebase/auth";
 
-// تعريف الـ Context هنا عشان الـ SidebarItem يستوردها
 export const SidebarContext = createContext<{ expanded: boolean }>({ expanded: true });
 
 interface SidebarProps {
@@ -10,7 +12,6 @@ interface SidebarProps {
     onLogout?: () => void;
     isDarkMode?: boolean;
     avatarUrl?: string;
-    // تتحكم في ظهور الـ Sidebar كـ drawer على الموبايل فقط
     mobileOpen?: boolean;
     onMobileClose?: () => void;
 }
@@ -25,11 +26,89 @@ export default function Sidebar({
     onMobileClose,
 }: SidebarProps) {
     const [expanded, setExpanded] = useState(true);
-    const resolvedAvatar = avatarUrl || getAvatarUrl(userName);
+    const resolvedAvatar = avatarUrl || getAvatarUrl(userName, 'sidebar');
+
+    const [friendEmailInput, setFriendEmailInput] = useState('');
+    const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
+    const auth = getAuth();
+
+    // جلب طلبات الصداقة الواردة لحظياً
+    useEffect(() => {
+        const currentUserId = auth.currentUser?.uid;
+        if (!currentUserId) return;
+
+        const q = query(
+            collection(db, "friendRequests"),
+            where("receiverId", "==", currentUserId),
+            where("status", "==", "pending")
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            setIncomingRequests(requests);
+        });
+
+        return () => unsubscribe();
+    }, [auth]);
+
+    // إرسال طلب صداقة باستخدام البريد الإلكتروني
+    const handleSendRequest = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const currentUser = auth.currentUser;
+        if (!currentUser || !friendEmailInput.trim()) return;
+
+        try {
+            const usersRef = collection(db, "users");
+            const q = query(usersRef, where("email", "==", friendEmailInput.trim().toLowerCase()));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                alert("لم يتم العثور على مستخدم بهذا البريد الإلكتروني!");
+                return;
+            }
+
+            const recipientDoc = querySnapshot.docs[0];
+            const recipientId = recipientDoc.id;
+
+            if (recipientId === currentUser.uid) {
+                alert("لا يمكنك إرسال طلب صداقة لنفسك!");
+                return;
+            }
+
+            const requestId = `${currentUser.uid}_${recipientId}`;
+            await setDoc(doc(db, "friendRequests", requestId), {
+                senderId: currentUser.uid,
+                senderName: currentUser.displayName || userName,
+                receiverId: recipientId,
+                status: "pending",
+                createdAt: serverTimestamp()
+            });
+
+            setFriendEmailInput('');
+            alert("تم إرسال طلب الصداقة بنجاح! 🚀");
+        } catch (error) {
+            console.error("Error sending friend request: ", error);
+            alert("حدث خطأ أثناء إرسال الطلب.");
+        }
+    };
+
+    // قبول طلب الصداقة
+    const acceptFriendRequest = async (requestId: string) => {
+        try {
+            const requestRef = doc(db, "friendRequests", requestId);
+            await updateDoc(requestRef, {
+                status: "accepted"
+            });
+        } catch (error) {
+            console.error("Error accepting request: ", error);
+        }
+    };
 
     return (
         <>
-            {/* خلفية سودة شفافة تظهر بس على الموبايل لما الـ Sidebar يكون مفتوح */}
             {mobileOpen && (
                 <div
                     onClick={onMobileClose}
@@ -57,7 +136,6 @@ export default function Sidebar({
                             <span className="font-bold tracking-wider text-lg">Mazag</span>
                         </div>
 
-                        {/* زرار الطي/الفتح - على الديسكتوب بس */}
                         <button 
                             onClick={() => setExpanded(curr => !curr)} 
                             className='hidden md:block p-2 rounded-xl bg-white/5 hover:bg-white/10 text-teal-400 transition-all border border-white/5 cursor-pointer'
@@ -69,7 +147,6 @@ export default function Sidebar({
                             )}
                         </button>
 
-                        {/* زرار القفل - على الموبايل بس */}
                         <button
                             onClick={onMobileClose}
                             className='md:hidden p-2 rounded-xl bg-white/5 hover:bg-white/10 text-teal-400 transition-all border border-white/5 cursor-pointer'
@@ -79,12 +156,53 @@ export default function Sidebar({
                         </button>
                     </div> 
 
-                    {/* Navigation Items Container */}
+                    {/* Navigation Items Container (الأصدقاء المقبولين فقط) */}
                     <SidebarContext.Provider value={{ expanded }}> 
-                        <ul className='flex-1 px-3 py-4 w-full flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-180px)]'>
+                        <ul className='flex-1 px-3 py-4 w-full flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-280px)]'>
                             {children}
                         </ul>
                     </SidebarContext.Provider> 
+
+                    {/* قسم إدارة الأصدقاء وطلبات الصداقة */}
+                    {expanded && (
+                        <div className="px-3 py-2 border-t border-white/10 bg-black/10">
+                            <form onSubmit={handleSendRequest} className="mb-2">
+                                <label className="block text-[11px] mb-1 text-gray-400">إضافة صديق بالإيميل</label>
+                                <div className="flex gap-1">
+                                    <input 
+                                        type="email" 
+                                        placeholder="user@example.com"
+                                        value={friendEmailInput}
+                                        onChange={(e) => setFriendEmailInput(e.target.value)}
+                                        className="w-full px-2 py-1 text-xs bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:border-teal-500"
+                                    />
+                                    <button type="submit" className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-xs rounded text-white font-medium transition cursor-pointer">
+                                        إرسال
+                                    </button>
+                                </div>
+                            </form>
+
+                            {/* طلبات الصداقة الواردة */}
+                            {incomingRequests.length > 0 && (
+                                <div className="mt-2">
+                                    <p className="text-[11px] text-teal-400 font-semibold mb-1">الطلبات الواردة ({incomingRequests.length})</p>
+                                    <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                                        {incomingRequests.map((req) => (
+                                            <div key={req.id} className="flex items-center justify-between bg-gray-900/90 p-1.5 rounded border border-white/5 text-xs">
+                                                <span className="truncate max-w-[90px] text-gray-300" title={req.senderName}>{req.senderName}</span>
+                                                <button 
+                                                    onClick={() => acceptFriendRequest(req.id)}
+                                                    className="px-2 py-0.5 bg-green-600 hover:bg-green-500 rounded text-white text-[11px] font-medium transition cursor-pointer"
+                                                >
+                                                    قبول
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* User Profile Footer */}
                     <div className='border-t border-white/10 p-3 flex items-center justify-between bg-black/20'>
@@ -97,16 +215,16 @@ export default function Sidebar({
                             <div className={`flex flex-col overflow-hidden transition-all duration-300 ${expanded ? "w-32 opacity-100" : "w-0 opacity-0"}`}>
                                 <h4 className={`font-semibold text-xs truncate ${isDarkMode ? 'text-gray-200' : 'text-black'}`}>{userName}</h4>
                                 <span className={`text-[10px] truncate ${isDarkMode ? 'text-teal-400' : 'text-teal-900'}`}>Online 🌿</span>
-                            </div>      
+                            </div>     
                         </div>
 
                         {onLogout && (
                             <button 
-                              onClick={onLogout}
-                              className="text-red-400 hover:bg-red-500/10 p-2 rounded-xl transition cursor-pointer"
-                              title="تسجيل الخروج"
+                                onClick={onLogout}
+                                className="text-red-400 hover:bg-red-500/10 p-2 rounded-xl transition cursor-pointer"
+                                title="تسجيل الخروج"
                             >
-                              🚪
+                                🚪
                             </button>
                         )}
                     </div>

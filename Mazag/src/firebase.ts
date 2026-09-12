@@ -24,3 +24,7 @@ export const db = getFirestore(app);
 
 // Initialize Firebase Authentication (real login/signup, not just localStorage)
 export const auth = getAuth(app);
+
+// ملاحظة: مش بنستخدم Firebase Storage هنا لأنه محتاج ترقية لخطة Blaze (فوترة).
+// بدلها، الملفات والتسجيلات الصوتية الصغيرة بتتحوّل base64 وتتخزن مباشرة
+// جوه مستند الرسالة في Firestore (شوف Chat.tsx).

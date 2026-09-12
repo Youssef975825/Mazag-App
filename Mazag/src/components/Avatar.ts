@@ -42,7 +42,7 @@ const FEMALE_TOPS = [
  * لو النوع معروف (male/female) بيقفل اختيار الشعر واللحية على الأشكال المناسبة.
  * لو مش معروف، بيرجع سلوك Dicebear العشوائي القديم زي ما كان.
  */
-export function getAvatarUrl(seed: string): string {
+export function getAvatarUrl(seed: string, gender: any): string {
   const safeSeed = seed || 'User';
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(safeSeed)}&background=0D9488&color=fff&rounded=true&bold=true`;
 }
