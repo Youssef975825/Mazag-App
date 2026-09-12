@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext } from 'react';
 import { getAvatarUrl } from '../components/Avatar';
-import { collection, query, where, getDocs, updateDoc, doc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, getDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { getAuth } from "firebase/auth";
 
@@ -26,7 +26,7 @@ export default function Sidebar({
     onMobileClose,
 }: SidebarProps) {
     const [expanded, setExpanded] = useState(true);
-    const resolvedAvatar = avatarUrl || getAvatarUrl(userName, 'sidebar');
+    const resolvedAvatar = avatarUrl || getAvatarUrl(userName, 0);
 
     const [friendEmailInput, setFriendEmailInput] = useState('');
     const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
@@ -78,8 +78,35 @@ export default function Sidebar({
                 return;
             }
 
-            const requestId = `${currentUser.uid}_${recipientId}`;
-            await setDoc(doc(db, "friendRequests", requestId), {
+            // نتأكد إننا مش أصحاب بالفعل، ومفيش طلب pending في أي اتجاه قبل ما نبعت طلب جديد
+            const forwardId = `${currentUser.uid}_${recipientId}`;
+            const backwardId = `${recipientId}_${currentUser.uid}`;
+            const [forwardSnap, backwardSnap] = await Promise.all([
+                getDoc(doc(db, "friendRequests", forwardId)),
+                getDoc(doc(db, "friendRequests", backwardId)),
+            ]);
+
+            if (forwardSnap.exists()) {
+                const status = forwardSnap.data().status;
+                if (status === "accepted") {
+                    alert("انتوا أصحاب بالفعل! 🌿");
+                } else {
+                    alert("لسه في طلب صداقة متبعت قبل كده مارديش عليه");
+                }
+                return;
+            }
+
+            if (backwardSnap.exists()) {
+                const status = backwardSnap.data().status;
+                if (status === "accepted") {
+                    alert("انتوا أصحاب بالفعل! 🌿");
+                } else {
+                    alert("الشخص ده بعتلك طلب صداقة بالفعل! افتح الطلبات الواردة واقبله");
+                }
+                return;
+            }
+
+            await setDoc(doc(db, "friendRequests", forwardId), {
                 senderId: currentUser.uid,
                 senderName: currentUser.displayName || userName,
                 receiverId: recipientId,
@@ -104,6 +131,15 @@ export default function Sidebar({
             });
         } catch (error) {
             console.error("Error accepting request: ", error);
+        }
+    };
+
+    // رفض طلب الصداقة - بنمسح الطلب خالص عشان يقدر يبعت تاني في المستقبل لو حبوا
+    const rejectFriendRequest = async (requestId: string) => {
+        try {
+            await deleteDoc(doc(db, "friendRequests", requestId));
+        } catch (error) {
+            console.error("Error rejecting request: ", error);
         }
     };
 
@@ -188,14 +224,22 @@ export default function Sidebar({
                                     <p className="text-[11px] text-teal-400 font-semibold mb-1">الطلبات الواردة ({incomingRequests.length})</p>
                                     <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
                                         {incomingRequests.map((req) => (
-                                            <div key={req.id} className="flex items-center justify-between bg-gray-900/90 p-1.5 rounded border border-white/5 text-xs">
-                                                <span className="truncate max-w-[90px] text-gray-300" title={req.senderName}>{req.senderName}</span>
-                                                <button 
-                                                    onClick={() => acceptFriendRequest(req.id)}
-                                                    className="px-2 py-0.5 bg-green-600 hover:bg-green-500 rounded text-white text-[11px] font-medium transition cursor-pointer"
-                                                >
-                                                    قبول
-                                                </button>
+                                            <div key={req.id} className="flex items-center justify-between bg-gray-900/90 p-1.5 rounded border border-white/5 text-xs gap-1">
+                                                <span className="truncate max-w-[70px] text-gray-300" title={req.senderName}>{req.senderName}</span>
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    <button 
+                                                        onClick={() => acceptFriendRequest(req.id)}
+                                                        className="px-2 py-0.5 bg-green-600 hover:bg-green-500 rounded text-white text-[11px] font-medium transition cursor-pointer"
+                                                    >
+                                                        قبول
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => rejectFriendRequest(req.id)}
+                                                        className="px-2 py-0.5 bg-red-600/80 hover:bg-red-500 rounded text-white text-[11px] font-medium transition cursor-pointer"
+                                                    >
+                                                        رفض
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>

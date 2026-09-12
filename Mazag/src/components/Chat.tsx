@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  collection, addDoc, query, orderBy, onSnapshot, serverTimestamp,
-  doc, setDoc, writeBatch,
+  collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp,
+  doc, setDoc, writeBatch, documentId,
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { db, auth } from '../firebase';
@@ -86,28 +86,87 @@ export default function Chat() {
     setInputText('');
   }, [currentUser?.uid]);
 
-  // جلب الأصدقاء (كل اليوزرز ما عدا أنا)
+  // 1) نجيب uids بتوع "أصدقائي الحقيقيين" بس: أي friendRequest حالتها accepted
+  // وأنا طرف فيها (سواء كنت المرسل أو المستقبل)
+  const [friendUids, setFriendUids] = useState<string[]>([]);
+
   useEffect(() => {
-    if (!currentUser) return;
-    const q = collection(db, "users");
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const users: any[] = [];
-      snapshot.forEach((document) => {
-        if (document.id !== currentUser.uid) {
-          const userData = document.data();
-          users.push({
-            uid: document.id,
-            name: userData.name,
-            avatar: userData.avatar || getAvatarUrl(userData.name, userData.gender),
-            status: userData.status || 'online'
-          });
-        }
-      });
-      setFriendsList(users);
-      setActiveFriend((curr: any) => curr ?? (users.length > 0 ? users[0] : null));
+    if (!currentUser) {
+      setFriendUids([]);
+      return;
+    }
+
+    const sentQ = query(
+      collection(db, "friendRequests"),
+      where("senderId", "==", currentUser.uid),
+      where("status", "==", "accepted")
+    );
+    const receivedQ = query(
+      collection(db, "friendRequests"),
+      where("receiverId", "==", currentUser.uid),
+      where("status", "==", "accepted")
+    );
+
+    let sentUids: string[] = [];
+    let receivedUids: string[] = [];
+
+    const recompute = () => {
+      setFriendUids(Array.from(new Set([...sentUids, ...receivedUids])));
+    };
+
+    const unsubSent = onSnapshot(sentQ, (snap) => {
+      sentUids = snap.docs.map((d) => d.data().receiverId);
+      recompute();
     });
-    return () => unsubscribe();
+    const unsubReceived = onSnapshot(receivedQ, (snap) => {
+      receivedUids = snap.docs.map((d) => d.data().senderId);
+      recompute();
+    });
+
+    return () => {
+      unsubSent();
+      unsubReceived();
+    };
   }, [currentUser]);
+
+  // 2) نجيب بيانات البروفايل (اسم/أفاتار/حالة) بتاعة الأصدقاء دول بس - مقسّمة
+  // على دفعات 10 بسبب حد استعلام "in" في Firestore
+  useEffect(() => {
+    if (!currentUser || friendUids.length === 0) {
+      setFriendsList([]);
+      setActiveFriend(null);
+      return;
+    }
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < friendUids.length; i += 10) {
+      chunks.push(friendUids.slice(i, i + 10));
+    }
+
+    const chunkResults: Record<number, any[]> = {};
+
+    const unsubscribes = chunks.map((chunk, index) =>
+      onSnapshot(query(collection(db, "users"), where(documentId(), "in", chunk)), (snap) => {
+        chunkResults[index] = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            uid: d.id,
+            name: data.name,
+            avatar: data.avatar || getAvatarUrl(data.name, data.gender),
+            status: data.status || 'online',
+          };
+        });
+        const merged = Object.values(chunkResults).flat();
+        setFriendsList(merged);
+        setActiveFriend((curr: any) =>
+          curr && merged.some((f) => f.uid === curr.uid) ? curr : (merged[0] ?? null)
+        );
+      })
+    );
+
+    return () => unsubscribes.forEach((u) => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, friendUids.join(',')]);
 
   // جلب الرسائل
   useEffect(() => {
@@ -464,6 +523,13 @@ export default function Chat() {
         <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>الأصدقاء أونلاين</div>
 
         {/* عرض الأصدقاء */}
+        {friendsList.length === 0 && (
+          <div className={`px-3 py-4 text-center text-[11px] leading-relaxed ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+            لسه معندكش أصحاب هنا 🌿
+            <br />
+            ابعت طلب صداقة بالإيميل من تحت
+          </div>
+        )}
         {friendsList.map((friend) => (
           <div
             key={friend.uid}
