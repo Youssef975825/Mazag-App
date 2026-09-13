@@ -325,9 +325,7 @@ export default function Chat() {
     setTypingStatus(false);
 
     const roomId = getChatRoomId(currentUser.uid, activeFriend.uid);
-    console.log('🔍 DEBUG - my uid:', currentUser.uid);
-    console.log('🔍 DEBUG - friend uid:', activeFriend.uid);
-    console.log('🔍 DEBUG - computed roomId:', roomId);
+
     try {
       await addDoc(collection(db, "chats", roomId, "messages"), {
         sender: currentUser.uid,
